@@ -1,0 +1,15 @@
+artifact_uri: file:///Users/rebeccayip/code/rebz135/TaxiFareModel/mlruns/1/359e4ce2a36b4df8b85412a582e5b828/artifacts
+end_time: null
+entry_point_name: ''
+experiment_id: '1'
+lifecycle_stage: active
+name: ''
+run_id: 359e4ce2a36b4df8b85412a582e5b828
+run_uuid: 359e4ce2a36b4df8b85412a582e5b828
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1631503889766
+status: 1
+tags: []
+user_id: unknown
