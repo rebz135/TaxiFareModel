@@ -1,101 +1,61 @@
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.linear_model import LinearRegression
+# from sklearn.pipeline import Pipeline
+# from sklearn.preprocessing import StandardScaler, OneHotEncoder
+# from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
+# from sklearn.compose import ColumnTransformer
 from TaxiFareModel.utils import compute_rmse
 from TaxiFareModel.data import get_data, clean_data
-from TaxiFareModel.encoders import DistanceTransformer, TimeFeaturesEncoder
-import mlflow
-from mlflow.tracking import MlflowClient
-from memoized_property import memoized_property
+from TaxiFareModel.pipeline import set_pipeline
+from TaxiFareModel.mlflow import MLFlowBase
+import joblib
 
-class Trainer():
-    def __init__(self, X, y):
-        """
-            X: pandas DataFrame
-            y: pandas Series
-        """
-        self.pipeline = None
-        self.X = X
-        self.y = y
-        self.mlflow_uri = "https://mlflow.lewagon.co/"
-        self.experiment_name = "[HK] Rebecca Y Taxi Fare Experiment v1.0"
+class Trainer(MLFlowBase):
+    def __init__(self):
+        super().__init__(
+            "[HK] rebz135 Taxi Fare Experiment LinearReg v1.0",
+            "https://mlflow.lewagon.co/")
 
-    def set_pipeline(self):
-        """defines the pipeline as a class attribute"""
-        dist_pipe = Pipeline([('dist_trans', DistanceTransformer()),
-                              ('stdscaler', StandardScaler())])
+    def train(self):
+        model_name = "linear"
+        line_count = 1_000
 
-        time_pipe = Pipeline([('time_enc',
-                               TimeFeaturesEncoder('pickup_datetime')),
-                              ('ohe', OneHotEncoder(handle_unknown='ignore'))])
+        #log experiment
+        self.mlflow_create_run()
+        self.mlflow_log_param('estimator', model_name)
+        self.mlflow_log_param("line_count", line_count)
 
-        preproc_pipe = ColumnTransformer([('distance', dist_pipe, [
-            "pickup_latitude", "pickup_longitude", 'dropoff_latitude',
-            'dropoff_longitude'
-        ]), ('time', time_pipe, ['pickup_datetime'])],
-                                         remainder="drop")
-        self.pipe = Pipeline([('preproc', preproc_pipe),
-                         ('linear_model', LinearRegression())])
+        # get data
+        df = get_data(line_count)
 
-        return self.pipe
+        # clean data
+        df = clean_data(df)
 
-    def run(self):
-        """set and train the pipeline"""
-        self.set_pipeline()
-        self.pipe.fit(self.X, self.y)
-        return self.pipe
+        # set X and y
+        y = df["fare_amount"]
+        X = df.drop("fare_amount", axis=1)
 
-    def evaluate(self, X_test, y_test):
-        """evaluates the pipeline on df_test and return the RMSE"""
-        y_pred = self.pipe.predict(X_test)
-        rmse = compute_rmse(y_pred, y_test)
-        self.mlflow_log_param('estimator', 'linear')
+        # hold out
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.15)
+
+        # build pipeline and train
+        pipe = set_pipeline()
+        pipe.fit(X_train, y_train)
+
+        # evaluate and log
+        y_pred = pipe.predict(X_val)
+        rmse = compute_rmse(y_pred, y_val)
         self.mlflow_log_metric('rmse', rmse)
-        return rmse
+        print(rmse)
 
-    @memoized_property
-    def mlflow_client(self):
-        mlflow.set_tracking_uri(self.mlflow_uri)
-        return MlflowClient()
+        # save model
+        joblib.dump(pipe, 'test_save_model.joblib')
 
-    @memoized_property
-    def mlflow_experiment_id(self):
-        try:
-            return self.mlflow_client.create_experiment(self.experiment_name)
-        except BaseException:
-            return self.mlflow_client.get_experiment_by_name(
-                self.experiment_name).experiment_id
-
-    @memoized_property
-    def mlflow_run(self):
-        return self.mlflow_client.create_run(self.mlflow_experiment_id)
-
-    def mlflow_log_param(self, key, value):
-        self.mlflow_client.log_param(self.mlflow_run.info.run_id, key, value)
-
-    def mlflow_log_metric(self, key, value):
-        self.mlflow_client.log_metric(self.mlflow_run.info.run_id, key, value)
-
+        return pipe
 
 if __name__ == "__main__":
-    # get data
-    df = get_data()
+    trainer = Trainer()
+    trainer.train()
 
-    # clean data
-    df = clean_data(df)
-
-    # set X and y
-    y = df["fare_amount"]
-    X = df.drop("fare_amount", axis=1)
-
-    # hold out
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.15)
-
-    # build pipeline and train
-    trainer = Trainer(X_train, y_train)
-    trainer.run()
-
-    # evaluate
-    print(trainer.evaluate(X_val, y_val))
+    # loaded_model = joblib.load('test_save_model')
+    # result = loaded_model.score(X_val, y_val)
+    # print(result)
